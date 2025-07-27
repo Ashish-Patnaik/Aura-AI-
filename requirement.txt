@@ -1,0 +1,9 @@
+Flask
+flask-cors
+flask-sock
+requests
+edge-tts
+python-dotenv
+nest_asyncio
+gunicorn
+gevent

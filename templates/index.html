@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Aura - AI Voice Assistant</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    :root { --main-bg: #d1684e; --accent-color: #fff; --text-color: #fff; --ai-bubble: #b85e46; --user-bubble: #e88c73; }
+    body { background: var(--main-bg); color: var(--text-color); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif; user-select: none; overflow: hidden; }
+    #wrap { position: absolute; inset: 0; overflow: hidden; }
+    #wrap canvas { position: absolute; left: 50%; top: 50%; width: 500px; height: 500px; margin: -250px 0 0 -250px; }
+    .controls { position: absolute; top: 20px; left: 50%; transform: translateX(-50%); text-align: center; z-index: 10; }
+    button { padding: 12px 25px; font-size: 16px; border: 2px solid var(--accent-color); border-radius: 30px; background-color: transparent; color: var(--text-color); cursor: pointer; margin: 0 10px; transition: all 0.2s ease-in-out; }
+    button:hover { background-color: var(--accent-color); color: var(--main-bg); }
+    button:disabled { opacity: 0.4; cursor: not-allowed; }
+    #status { color: var(--text-color); text-align: center; position: absolute; bottom: 5%; width: 100%; font-size: 20px; z-index: 10; text-shadow: 1px 1px 2px rgba(0,0,0,0.5); }
+    #status strong { color: #ffefd5; }
+
+    /* --- Fixed Hamburger Menu --- */
+    #menu-toggle { 
+      position: fixed; 
+      top: 20px; 
+      left: 20px; 
+      z-index: 1001; 
+      cursor: pointer; 
+      width: 50px; 
+      height: 50px; 
+      border: 2px solid var(--accent-color); 
+      border-radius: 50%; 
+      display: flex; 
+      align-items: center; 
+      justify-content: center; 
+      background: transparent; 
+      transition: all 0.3s ease;
+      padding: 0;
+      outline: none;
+    }
+    
+    #menu-toggle:hover { 
+      background-color: rgba(255,255,255,0.1); 
+      transform: scale(1.05);
+    }
+    
+    #menu-toggle.active {
+      background-color: rgba(255,255,255,0.2);
+    }
+    
+    .hamburger-icon {
+      position: relative;
+      width: 22px;
+      height: 16px;
+    }
+    
+    .hamburger-icon span {
+      position: absolute;
+      left: 0;
+      width: 100%;
+      height: 2px;
+      background: var(--accent-color);
+      border-radius: 2px;
+      transition: all 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+    }
+    
+    .hamburger-icon span:nth-child(1) {
+      top: 0;
+    }
+    
+    .hamburger-icon span:nth-child(2) {
+      top: 7px;
+    }
+    
+    .hamburger-icon span:nth-child(3) {
+      top: 14px;
+    }
+    
+    /* Animation when menu is open */
+    #menu-toggle.active .hamburger-icon span:nth-child(1) {
+      transform: rotate(45deg);
+      top: 7px;
+    }
+    
+    #menu-toggle.active .hamburger-icon span:nth-child(2) {
+      opacity: 0;
+      transform: translateX(20px);
+    }
+    
+    #menu-toggle.active .hamburger-icon span:nth-child(3) {
+      transform: rotate(-45deg);
+      top: 7px;
+    }
+
+    /* --- Chat Panel --- */
+    #chat-panel { position: fixed; top: 0; left: 0; width: 350px; height: 100%; background: rgba(0,0,0,0.2); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border-right: 1px solid rgba(255,255,255,0.1); transform: translateX(-100%); transition: transform 0.4s cubic-bezier(0.25, 1, 0.5, 1); z-index: 1000; display: flex; flex-direction: column; }
+    #chat-panel.open { transform: translateX(0); }
+    #chat-header { padding: 40px 20px 20px 120px; font-size: 1.2em; font-weight: bold; border-bottom: 1px solid rgba(255,255,255,0.1); }
+    #chat-messages { flex-grow: 1; overflow-y: auto; padding: 15px; }
+    .message { margin-bottom: 15px; padding: 10px 15px; border-radius: 18px; max-width: 85%; line-height: 1.4; }
+    .user-message { background: var(--user-bubble); align-self: flex-end; margin-left: auto; }
+    .ai-message { background: var(--ai-bubble); align-self: flex-start; }
+    #chat-messages { display: flex; flex-direction: column; }
+  </style>
+</head>
+<body>
+  <div id="wrap"></div>
+
+  <!-- New UI Elements -->
+  <button id="menu-toggle">
+    <div class="hamburger-icon">
+      <span></span>
+      <span></span>
+      <span></span>
+    </div>
+  </button>
+  <div id="chat-panel">
+    <div id="chat-header">Conversation</div>
+    <div id="chat-messages"></div>
+  </div>
+
+  <div class="controls">
+    <button id="talkBtn">Talk</button>
+    <button id="stopBtn" disabled>Stop</button>
+  </div>
+  <p id="status">Press "Talk" to start</p>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r83/three.min.js"></script>
+  <!-- Animation Script (Unchanged) -->
+  <script>/* Your Three.js code remains exactly the same here */
+    let camera, scene, renderer, group, mesh, ringcover, ring; let rotatevalue = 0.035, acceleration = 0, animatestep = 0; let pi2 = Math.PI * 2; let length = 45, radius = 6.6; Object.defineProperty(window, 'toend', { set: function (value) { window._toend = value; }, get: function () { return window._toend || false; } }); const $wrap = document.getElementById('wrap'); camera = new THREE.PerspectiveCamera(65, 1, 1, 10000); camera.position.z = 150; scene = new THREE.Scene(); group = new THREE.Group(); scene.add(group); mesh = new THREE.Mesh( new THREE.TubeGeometry(new (THREE.Curve.create(function () {}, function (percent) { let x = length * Math.sin(pi2 * percent); let y = radius * Math.cos(pi2 * 3 * percent); let t = percent % 0.25 / 0.25; t = percent % 0.25 - (2 * (1 - t) * t * -0.0185 + t * t * 0.25); if (Math.floor(percent / 0.25) === 0 || Math.floor(percent / 0.25) === 2) t *= -1; let z = radius * Math.sin(pi2 * 2 * (percent - t)); return new THREE.Vector3(x, y, z); }))(), 200, 1.1, 2, true), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true }) ); group.add(mesh); ringcover = new THREE.Mesh(new THREE.PlaneGeometry(50, 15, 1), new THREE.MeshBasicMaterial({ color: 0xd1684e, opacity: 0, transparent: true })); ringcover.position.x = length + 1; ringcover.rotation.y = Math.PI / 2; group.add(ringcover); ring = new THREE.Mesh(new THREE.RingGeometry(4.3, 5.55, 32), new THREE.MeshBasicMaterial({ color: 0xffffff, opacity: 0, transparent: true })); ring.position.x = length + 1.1; ring.rotation.y = Math.PI / 2; group.add(ring); for (let i = 0; i < 10; i++) { let plain = new THREE.Mesh(new THREE.PlaneGeometry(length * 2 + 1, radius * 3, 1), new THREE.MeshBasicMaterial({ color: 0xd1684e, transparent: true, opacity: 0.13 })); plain.position.z = -2.5 + i * 0.5; group.add(plain); } renderer = new THREE.WebGLRenderer({ antialias: true }); renderer.setPixelRatio(window.devicePixelRatio); renderer.setSize(500, 500); renderer.setClearColor('#d1684e'); $wrap.appendChild(renderer.domElement); function render() { animatestep = Math.max(0, Math.min(240, toend ? animatestep + 1 : animatestep - 4)); acceleration = easing(animatestep, 0, 1, 240); if (acceleration > 0.35) { let progress = (acceleration - 0.35) / 0.65; group.rotation.y = -Math.PI / 2 * progress; group.position.z = 50 * progress; let fade = Math.max(0, (acceleration - 0.97) / 0.03); mesh.material.opacity = 1 - fade; ringcover.material.opacity = ring.material.opacity = fade; ring.scale.x = ring.scale.y = 0.9 + 0.1 * fade; } else { mesh.material.opacity = 1; ringcover.material.opacity = ring.material.opacity = 0; } renderer.render(scene, camera); } function animate() { mesh.rotation.x += rotatevalue + acceleration; render(); requestAnimationFrame(animate); } function easing(t, b, c, d) { if ((t /= d / 2) < 1) return c / 2 * t * t + b; return c / 2 * ((t -= 2) * t * t + 2) + b; } animate();
+  </script>
+
+  <!-- ==================== REVISED JAVASCRIPT LOGIC ==================== -->
+  <script>
+    const talkBtn = document.getElementById("talkBtn");
+    const stopBtn = document.getElementById("stopBtn");
+    const statusEl = document.getElementById("status");
+    const menuToggle = document.getElementById("menu-toggle");
+    const chatPanel = document.getElementById("chat-panel");
+    const chatMessages = document.getElementById("chat-messages");
+    const mimeCodec = 'audio/mpeg';
+
+    let recognition;
+    let audioContext;
+    let audioQueue = [];
+    let sourceBuffer;
+    let mediaSource;
+    let websocket;
+    let currentAiMessageDiv; // To hold the div we are appending text to
+    let isSpeaking = false;
+
+    // --- UI Functions ---
+    menuToggle.addEventListener('click', () => {
+        chatPanel.classList.toggle('open');
+        menuToggle.classList.toggle('active');
+    });
+
+    function addMessageToDisplay(sender, text) {
+        const messageDiv = document.createElement('div');
+        messageDiv.className = `message ${sender}-message`;
+        messageDiv.textContent = text;
+        chatMessages.appendChild(messageDiv);
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+        return messageDiv;
+    }
+
+    // --- Core Logic ---
+    function resetTurn() {
+        talkBtn.disabled = false;
+        stopBtn.disabled = true;
+        isSpeaking = false;
+        currentAiMessageDiv = null;
+        if (!recognition) {
+            statusEl.textContent = 'Press "Talk" to start';
+        }
+    }
+
+    function connectWebSocket() {
+        if (websocket && websocket.readyState === WebSocket.OPEN) return;
+
+        websocket = new WebSocket(`ws://${window.location.host}/stream`);
+        websocket.binaryType = 'arraybuffer';
+
+        websocket.onopen = () => console.log("WebSocket connected and ready.");
+        websocket.onclose = () => {
+            console.log("WebSocket disconnected.");
+            statusEl.textContent = "Connection lost. Please refresh.";
+            talkBtn.disabled = true;
+            window.toend = false;
+        };
+        websocket.onerror = (error) => {
+            console.error("WebSocket error:", error);
+            statusEl.textContent = "Connection error. Please refresh.";
+            talkBtn.disabled = true;
+            window.toend = false;
+        };
+
+        // This is the main message handler for the entire conversation
+        websocket.onmessage = (event) => {
+            if (event.data instanceof ArrayBuffer) {
+                // This is audio data
+                audioQueue.push(event.data);
+                processAudioQueue();
+            } else {
+                // This is a JSON control message
+                const msg = JSON.parse(event.data);
+                if (msg.type === 'start_of_response') {
+                    currentAiMessageDiv = addMessageToDisplay('ai', '...'); // Create a new bubble
+                    currentAiMessageDiv.textContent = ''; // Clear the placeholder dots
+                } else if (msg.type === 'text_chunk') {
+                    if (currentAiMessageDiv) {
+                        currentAiMessageDiv.textContent += msg.data + ' ';
+                    }
+                } else if (msg.type === 'end_of_response') {
+                    resetTurn();
+                    const checkSpeaking = setInterval(() => {
+                        if (!isSpeaking) {
+                            window.toend = false; // Stop animation only when audio is done
+                            clearInterval(checkSpeaking);
+                        }
+                    }, 200);
+                }
+            }
+        };
+    }
+
+    function startConversation() {
+        if (recognition) return;
+        if (!audioContext) audioContext = new (window.AudioContext || window.webkitAudioContext)();
+
+        recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
+        recognition.lang = "en-US";
+        recognition.continuous = false;
+
+        recognition.onstart = () => {
+            window.toend = true;
+            statusEl.textContent = "Listening...";
+            talkBtn.disabled = true;
+            stopBtn.disabled = false;
+        };
+
+        recognition.onresult = (event) => {
+            const transcript = event.results[0][0].transcript;
+            statusEl.innerHTML = `Thinking...`;
+            addMessageToDisplay('user', transcript);
+            if (websocket && websocket.readyState === WebSocket.OPEN) {
+                websocket.send(transcript);
+                setupAudioPipeline();
+            } else {
+                statusEl.textContent = "Not connected. Please wait.";
+            }
+        };
+
+        recognition.onend = () => {
+            recognition = null;
+            if(!isSpeaking){
+              resetTurn();
+            }
+        };
+        recognition.onerror = (e) => {
+            statusEl.textContent = `Error: ${e.error}`;
+            recognition = null;
+            resetTurn();
+        };
+
+        recognition.start();
+    }
+    
+    function setupAudioPipeline() {
+        isSpeaking = true;
+        audioQueue = [];
+        mediaSource = new MediaSource();
+        const audioPlayer = new Audio();
+        audioPlayer.src = URL.createObjectURL(mediaSource);
+        audioPlayer.play().catch(e => console.error("Autoplay error:", e));
+        audioPlayer.onended = () => {
+          isSpeaking = false;
+          console.log("Audio pipeline finished.");
+        };
+
+        mediaSource.addEventListener('sourceopen', () => {
+            sourceBuffer = mediaSource.addSourceBuffer(mimeCodec);
+            sourceBuffer.addEventListener('updateend', processAudioQueue);
+        });
+    }
+
+    function processAudioQueue() {
+        if (sourceBuffer && !sourceBuffer.updating && audioQueue.length > 0) {
+            sourceBuffer.appendBuffer(audioQueue.shift());
+        }
+    }
+
+    // --- Initial Setup ---
+    talkBtn.addEventListener('click', startConversation);
+    stopBtn.addEventListener('click', () => {
+        if (recognition) recognition.stop();
+        // Future: Implement logic to interrupt TTS
+    });
+    
+    // Connect WebSocket when the page loads
+    connectWebSocket();
+
+  </script>
+</body>
+</html>
